@@ -10,9 +10,9 @@ import (
 )
 
 type Server struct {
-	DB      *Storage
-	S3      *S3Client
-	Brocker *RbClient
+	DB     *Storage
+	S3     *S3Client
+	Broker *RabbitClient
 }
 
 func (s *Server) NewConnection() http.Handler {
