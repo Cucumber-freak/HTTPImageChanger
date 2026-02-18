@@ -16,7 +16,7 @@ type RabbitClient struct {
 func ConnectRabbit(url, queueName string) *RabbitClient {
 	conn, err := amqp.Dial(url)
 	if err != nil {
-		panic(fmt.Sprintf("Ошибка RabbitMQ: %v", err))
+		panic(fmt.Sprintf("RabbitMQ Error: %v", err))
 	}
 
 	ch, err := conn.Channel()

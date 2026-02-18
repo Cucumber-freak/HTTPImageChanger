@@ -37,7 +37,7 @@ func (s *Server) UploadHandler(w http.ResponseWriter, r *http.Request) {
 	var ctx context.Context
 	s.DB.SaveImg(ctx, taskId, header.Filename)
 	if err != nil {
-		http.Error(w, "Ошибка БД", http.StatusInternalServerError)
+		http.Error(w, "Db error", http.StatusInternalServerError)
 		return
 	}
 }
