@@ -31,3 +31,21 @@ func (s *S3Client) Upload(objectName string, reader io.Reader, size int64) error
 	})
 	return err
 }
+
+func (s *S3Client) Download(n string) (io.ReadCloser, error) {
+	object, err := s.Client.GetObject(
+		context.Background(),
+		s.BucketName,
+		n,
+		minio.GetObjectOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("can't get object")
+	}
+	_, err = object.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("can,t find file in S3: %w", err)
+	}
+
+	return object, nil
+}
