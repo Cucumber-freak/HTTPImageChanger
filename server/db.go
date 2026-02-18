@@ -48,3 +48,20 @@ func (s *Storage) GetImg(ctx context.Context, id string) (string, error) {
 	}
 	return fileName, nil
 }
+
+func (s *Storage) UpdateStatus(ctx context.Context, id, stat string) error {
+	sqlQuery := `
+    UPDATE images
+    SET status = $2
+    WHERE id = $1;
+    `
+	result, err := s.pool.Exec(ctx, sqlQuery, id, stat)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return fmt.Errorf("task with id %s don't find", id)
+	}
+
+	return nil
+}
