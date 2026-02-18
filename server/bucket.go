@@ -20,7 +20,7 @@ func ConnectS3(endpoint, accessKey, secretKey, bucket string) *S3Client {
 		Secure: false,
 	})
 	if err != nil {
-		panic(fmt.Sprintf("Ошибка подключения к MinIO: %v", err))
+		panic(fmt.Sprintf("Can't connect to MinIO: %v", err))
 	}
 	return &S3Client{Client: client, BucketName: bucket}
 }
