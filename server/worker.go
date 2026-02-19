@@ -6,41 +6,51 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"log"
 )
 
-func (s *Server) StartWorker() {
+func (s *Server) StartWorker(ctx context.Context) {
 	msgs, _ := s.Broker.Channel.Consume(s.Broker.Queue, "", false, false, false, false, nil)
-	for f := range msgs {
-		imageID := string(f.Body)
-		ctx := context.Background()
-		s.DB.UpdateStatus(ctx, imageID, "processing")
-		reader, err := s.S3.Download(imageID)
-		if err != nil {
-			log.Printf("Error downloading %s: %v", imageID, err)
-			f.Nack(false, true)
-			continue
-		}
+	for {
+		select {
+		case <-ctx.Done():
 
-		changedImage, size, err := s.ChangeImage(reader)
-		reader.Close()
-		if err != nil {
-			log.Printf("Error processing %s: %v", imageID, err)
-			s.DB.UpdateStatus(ctx, imageID, "error")
+			return
+		case f, ok := <-msgs:
+			if !ok {
+				return
+			}
+
+			imageID := string(f.Body)
+			s.DB.UpdateStatus(ctx, imageID, "processing")
+			reader, err := s.S3.Download(imageID)
+			if err != nil {
+				log.Printf("Error downloading %s: %v", imageID, err)
+				f.Nack(false, true)
+				continue
+			}
+
+			changedImage, size, err := s.ChangeImage(reader)
+			reader.Close()
+			if err != nil {
+				log.Printf("Error processing %s: %v", imageID, err)
+				s.DB.UpdateStatus(ctx, imageID, "error")
+				f.Ack(false)
+				continue
+			}
+			err = s.S3.Upload(imageID+"_compressed", changedImage, size)
+			if err != nil {
+				log.Printf("Error uploading %s: %v", imageID, err)
+				f.Nack(false, true)
+				continue
+			}
+			s.DB.UpdateStatus(ctx, imageID, "completed")
 			f.Ack(false)
-			continue
+			log.Printf("Task %s completed!", imageID)
 		}
-		err = s.S3.Upload(imageID+"_compressed", changedImage, size)
-		if err != nil {
-			log.Printf("Error uploading %s: %v", imageID, err)
-			f.Nack(false, true)
-			continue
-		}
-		s.DB.UpdateStatus(ctx, imageID, "completed")
-		f.Ack(false)
-		log.Printf("Task %s completed!", imageID)
 	}
 }
 

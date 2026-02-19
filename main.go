@@ -5,44 +5,54 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	connStr := "postgres://user:password@localhost:5432/dbname"
-	pool, err := pgxpool.New(ctx, connStr)
+	pool, err := pgxpool.New(ctx, "postgres://user:password@localhost:5432/photo_service")
 	if err != nil {
-		log.Fatalf("Не удалось создать пул соединений: %v", err)
+		log.Fatal(err)
 	}
-	defer pool.Close()
-
-	if err := pool.Ping(ctx); err != nil {
-		log.Fatalf("База данных недоступна: %v", err)
-	}
-
 	storage := server.NewStorage(pool)
-
-	if err := storage.CreateTable(ctx); err != nil {
-		log.Fatalf("Ошибка при создании таблицы: %v", err)
-	}
-
-	s3Client := server.ConnectS3("localhost:9000", "minioadmin", "minioadmin", "images")
+	s3Client := server.ConnectS3("localhost:9000", "admin", "admin", "images")
 	rabbitClient := server.ConnectRabbit("amqp://guest:guest@localhost:5672/", "task_queue")
-
 	srv := &server.Server{
 		DB:     storage,
 		S3:     s3Client,
 		Broker: rabbitClient,
 	}
 
-	log.Println("Сервер запускается на порту :8080...")
-	err = http.ListenAndServe(":8080", srv.NewConnection())
-	if err != nil {
-		log.Fatalf("Ошибка запуска сервера: %v", err)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			srv.StartWorker(ctx)
+		}()
 	}
+	httpServer := &http.Server{Addr: ":8080", Handler: srv.NewConnection()}
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("Server error: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Println("Stop work")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	httpServer.Shutdown(shutdownCtx)
+
+	wg.Wait()
+	log.Println("All workers and work!")
 }
