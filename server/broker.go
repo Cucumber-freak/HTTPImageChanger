@@ -32,9 +32,9 @@ func ConnectRabbit(url, queueName string) *RabbitClient {
 	return &RabbitClient{Conn: conn, Channel: ch, Queue: queueName}
 }
 
-func (r *RabbitClient) Publish(taskID string) error {
+func (r *RabbitClient) Publish(ctx context.Context, taskID string) error {
 	return r.Channel.PublishWithContext(
-		context.Background(),
+		ctx,
 		"",
 		r.Queue,
 		false,
@@ -44,4 +44,9 @@ func (r *RabbitClient) Publish(taskID string) error {
 			Body:        []byte(taskID),
 		},
 	)
+}
+
+func (r *RabbitClient) Close() {
+	r.Channel.Close()
+	r.Conn.Close()
 }
