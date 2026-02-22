@@ -10,6 +10,7 @@ import (
 	_ "image/png"
 	"io"
 	"log"
+	"time"
 )
 
 func (s *Server) StartWorker(ctx context.Context) {
@@ -25,8 +26,10 @@ func (s *Server) StartWorker(ctx context.Context) {
 			}
 
 			imageID := string(f.Body)
-			s.DB.UpdateStatus(ctx, imageID, "processing")
-			reader, err := s.S3.Download(imageID)
+			dbCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			s.DB.UpdateStatus(dbCtx, imageID, "processing")
+			cancel()
+			reader, err := s.S3.Download(ctx, imageID)
 			if err != nil {
 				log.Printf("Error downloading %s: %v", imageID, err)
 				f.Nack(false, true)
@@ -41,10 +44,10 @@ func (s *Server) StartWorker(ctx context.Context) {
 				f.Ack(false)
 				continue
 			}
-			err = s.S3.Upload(imageID+"_compressed", changedImage, size)
+			err = s.S3.Upload(ctx, imageID+"_compressed", changedImage, size)
 			if err != nil {
 				log.Printf("Error uploading %s: %v", imageID, err)
-				f.Nack(false, true)
+				f.Nack(false, false)
 				continue
 			}
 			s.DB.UpdateStatus(ctx, imageID, "completed")
