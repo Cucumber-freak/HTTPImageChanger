@@ -1,6 +1,7 @@
 package main
 
 import (
+	"PIZDEC/config"
 	"PIZDEC/server"
 	"context"
 	"log"
@@ -15,22 +16,28 @@ import (
 )
 
 func main() {
+	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, "postgres://user:password@localhost:5432/photo_service")
+	pool, err := pgxpool.New(ctx, cfg.DBURL)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer pool.Close()
 	storage := server.NewStorage(pool)
-	s3Client := server.ConnectS3("localhost:9000", "admin", "admin", "images")
-	rabbitClient := server.ConnectRabbit("amqp://guest:guest@localhost:5672/", "task_queue")
+	err = storage.CreateTable(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create table: %v", err)
+	}
+	s3Client := server.ConnectS3(ctx, cfg.S3Endpoint, cfg.S3Key, cfg.S3Secret, cfg.S3Bucket)
+	rabbitClient := server.ConnectRabbit(cfg.RabbitURL, cfg.QueueName)
+	defer rabbitClient.Close()
 	srv := &server.Server{
 		DB:     storage,
 		S3:     s3Client,
 		Broker: rabbitClient,
 	}
-
 	var wg sync.WaitGroup
 
 	for i := 0; i < 5; i++ {
@@ -40,7 +47,7 @@ func main() {
 			srv.StartWorker(ctx)
 		}()
 	}
-	httpServer := &http.Server{Addr: ":8080", Handler: srv.NewConnection()}
+	httpServer := &http.Server{Addr: cfg.Port, Handler: srv.NewConnection()}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("Server error: %v", err)
@@ -51,7 +58,10 @@ func main() {
 	log.Println("Stop work")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	httpServer.Shutdown(shutdownCtx)
+	err = httpServer.Shutdown(shutdownCtx)
+	if err != nil {
+		log.Printf("HTTP shutdown error: %v", err)
+	}
 
 	wg.Wait()
 	log.Println("All workers and work!")
