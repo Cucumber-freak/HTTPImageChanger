@@ -1,17 +1,10 @@
-version: '3.8'
-
 services:
-
   app:
     build: .
     ports:
       - "8080:8080"
     env_file:
       - .env
-    environment:
-      - DB_URL=postgres://user:password@db:5432/photo_service
-      - S3_ENDPOINT=minio:9000
-      - RABBIT_URL=amqp://guest:guest@rabbitmq:5672/
     depends_on:
       db:
         condition: service_healthy
@@ -20,7 +13,6 @@ services:
       minio:
         condition: service_healthy
 
- 
   db:
     image: postgres:15-alpine
     environment:
@@ -34,10 +26,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
 
- 
   minio:
     image: minio/minio
     ports:
@@ -45,22 +34,19 @@ services:
       - "9001:9001"
     environment:
       MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: admin
+      MINIO_ROOT_PASSWORD: admin12345
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 5s
       timeout: 5s
       retries: 5
-    volumes:
-      - minio_data:/data
 
-  # Брокер RabbitMQ
   rabbitmq:
     image: rabbitmq:3-management
     ports:
       - "5672:5672"
-      - "15672:15672" 
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
@@ -69,7 +55,3 @@ services:
       interval: 5s
       timeout: 15s
       retries: 5
-
-volumes:
-  postgres_data:
-  minio_data:
